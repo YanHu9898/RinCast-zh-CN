@@ -1,4 +1,8 @@
-# RinCast
+# RinCast 简体中文分支（zh-CN，非官方）
+
+> **非官方汉化分支**：本仓库基于 [TheReal-Flo/RinCast](https://github.com/TheReal-Flo/RinCast)，维护简体中文本地化及必要的界面与字体适配。RinCast 原项目及其原始代码归上游作者和贡献者；本仓库不主张原创或所有权。
+>
+> **Unofficial Simplified Chinese localization fork** of [TheReal-Flo/RinCast](https://github.com/TheReal-Flo/RinCast). The upstream project and original work remain theirs.
 
 RinCast is a free, open-source way to use your Windows PC from a Meta Quest 3 or a PICO 4.
 See and control all of your monitors in an immersive space, and play PC VR games
