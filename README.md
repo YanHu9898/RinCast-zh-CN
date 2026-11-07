@@ -10,6 +10,10 @@ through SteamVR. There's no subscription and no store purchase.
 - **Private:** every packet is encrypted, and stream traffic always goes directly between your headset and your PC.
 - **No account needed at home:** PCs on the same network appear automatically. An optional account lets you connect from other networks.
 
+## 简体中文版本
+
+本 `zh-CN` 分支为 PC 串流端和 Quest/PICO 头显端提供内置简体中文界面。构建方法、签名说明和当前验证范围见 [`docs/ZH-CN.md`](docs/ZH-CN.md)。
+
 ## Requirements
 
 - Windows 10 or 11, 64-bit, with an NVIDIA, AMD or Intel GPU that can encode video.

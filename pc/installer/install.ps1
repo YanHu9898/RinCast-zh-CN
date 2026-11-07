@@ -1,4 +1,4 @@
-<#
+﻿<#
   RinCast PC installer: the steps RinCast-<version>-Setup.exe runs, and what a manual install
   from the unpacked release zip or a staged package (dist\RinCast) runs. It asks for
   administrator rights if it needs them.
@@ -26,16 +26,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# The native setup reads this stream as UTF-8 so Chinese progress/error text is preserved.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $source = $PSScriptRoot
 $sentinelName = '.rincast-install'
 
 function Close-Window {
     # The elevated window closes when the script ends; keep the result readable.
-    if ($Elevated) { Read-Host 'Press Enter to close this window' | Out-Null }
+    if ($Elevated) { Read-Host '按 Enter 关闭此窗口' | Out-Null }
 }
 
 trap {
-    Write-Host "`nRinCast was not installed: $_" -ForegroundColor Red
+    Write-Host "`nRinCast 安装失败：$_" -ForegroundColor Red
     Close-Window
     exit 1
 }
@@ -69,28 +71,28 @@ if (-not ([Security.Principal.WindowsPrincipal]$id).IsInRole([Security.Principal
 }
 
 if (-not (Test-Path (Join-Path $source 'RinCast Streamer.exe'))) {
-    throw "RinCast Streamer.exe isn't next to install.ps1. Unpack the whole release zip first."
+    throw "install.ps1 旁边找不到 RinCast Streamer.exe。请先解压完整发行包。"
 }
 
 # uninstall.ps1 removes the whole install folder, so never adopt one that holds other files.
 $sentinel = Join-Path $InstallDir $sentinelName
 if ($InstallDir -eq [IO.Path]::GetPathRoot($InstallDir).TrimEnd('\')) {
-    throw "Choose a folder for RinCast, not the root of a drive ($InstallDir)."
+    throw "请选择用于安装 RinCast 的文件夹，而不是磁盘根目录（$InstallDir）。"
 }
 if ((Test-Path $InstallDir) -and -not (Test-Path $sentinel) -and $InstallDir -ine (Join-Path $env:ProgramFiles 'RinCast') -and
     (Get-ChildItem $InstallDir -Force | Select-Object -First 1)) {
-    throw "$InstallDir already contains other files. Choose an empty folder."
+    throw "$InstallDir 已包含其他文件。请选择一个空文件夹。"
 }
 
 $versionFile = Join-Path $source 'VERSION'
 $version = if (Test-Path $versionFile) { (Get-Content $versionFile -TotalCount 1).Trim() } else { '0.0.0' }
 
 # 1. Files -------------------------------------------------------------------
-Step "Copying files to $InstallDir"
+Step "正在将文件复制到 $InstallDir"
 # SteamVR keeps RinCast's driver loaded, so it has to close too, or copying the driver fails
 # halfway through and leaves old and new files mixed.
 $running = @(Get-Process 'RinCast Streamer', 'vrserver', 'vrmonitor', 'vrcompositor', 'vrdashboard', 'vrwebhelper', 'vrstartup' -ErrorAction SilentlyContinue)
-if ($running | Where-Object ProcessName -like 'vr*') { Write-Host '   SteamVR is closing to update its RinCast driver.' }
+if ($running | Where-Object ProcessName -like 'vr*') { Write-Host '   正在关闭 SteamVR 以更新 RinCast 驱动。' }
 if ($running) {
     $running | Stop-Process -Force
     # Windows keeps the exe locked until the process has really gone.
@@ -111,7 +113,7 @@ Get-ChildItem $InstallDir -Recurse -File | Unblock-File
 $exe = Join-Path $InstallDir 'RinCast Streamer.exe'
 
 # 2. Firewall ----------------------------------------------------------------
-Step 'Adding firewall rules'
+Step '正在添加防火墙规则'
 # Someone who allowed Public networks in RinCast Streamer keeps that choice.
 $hadPublic = @(Get-NetFirewallRule -DisplayName 'RinCast Streamer' -ErrorAction SilentlyContinue |
     Where-Object { "$($_.Profile)" -match 'Public|Any' }).Count -gt 0
@@ -132,7 +134,7 @@ New-NetFirewallRule -DisplayName 'RinCast streaming (UDP 38711)' -Group 'RinCast
 
 # 3. OpenXR runtime (local builds only) ---------------------------------------
 if (Test-Path (Join-Path $source 'openxr\rincast-openxr.json')) {
-    Step 'Registering the RinCast XR OpenXR runtime'
+    Step '正在注册 RinCast XR OpenXR 运行时'
     $manifest = Join-Path $InstallDir 'openxr\rincast-openxr.json'
     $xrKey = 'HKLM:\SOFTWARE\Khronos\OpenXR\1\AvailableRuntimes'
     New-Item -Force $xrKey | Out-Null
@@ -146,19 +148,19 @@ $steam = (Get-ItemProperty "Registry::HKEY_USERS\$userSid\Software\Valve\Steam" 
 $vrpathreg = if ($steam) { Join-Path $steam 'steamapps\common\SteamVR\bin\win64\vrpathreg.exe' }
 if ($userSid -ne $id.User.Value) {
     # vrpathreg writes to the profile of the account it runs as, which is the wrong one here.
-    Write-Host '   RinCast Streamer registers the SteamVR driver the first time it starts.' -ForegroundColor DarkGray
+    Write-Host '   RinCast Streamer 首次启动时会注册 SteamVR 驱动。' -ForegroundColor DarkGray
 } elseif ($vrpathreg -and (Test-Path $vrpathreg)) {
-    Step 'Registering the SteamVR driver'
+    Step '正在注册 SteamVR 驱动'
     & $vrpathreg adddriver $driverDir | Out-Null
 } else {
-    Write-Host '   SteamVR not found; RinCast Streamer registers the driver once SteamVR is installed.' -ForegroundColor DarkGray
+    Write-Host '   未找到 SteamVR；安装 SteamVR 后，RinCast Streamer 会注册驱动。' -ForegroundColor DarkGray
 }
 
 # 5. Audio driver -------------------------------------------------------------
 if (-not $SkipAudio) {
     if (Test-Path (Join-Path $source 'audio\RinCastAudio.inf')) {
         $inf = Join-Path $InstallDir 'audio\RinCastAudio.inf'
-        Step 'Installing RinCast Speaker and RinCast Microphone'
+        Step '正在安装 RinCast 扬声器和麦克风'
         $cert = Join-Path $InstallDir 'audio\RinCastTest.cer'
         if (Test-Path $cert) {
             # Test-signed development build: trust the test certificate on this machine.
@@ -166,23 +168,23 @@ if (-not $SkipAudio) {
             Import-Certificate -FilePath $cert -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
             $bcd = (bcdedit /enum '{current}') -join "`n"
             if ($bcd -notmatch 'testsigning\s+Yes') {
-                Warn ('The audio driver is test-signed. Enable test signing with "bcdedit /set testsigning on", ' +
-                    'reboot, and run "rincast-audio-setup.exe install audio\RinCastAudio.inf" again.')
+                Warn ('音频驱动使用测试签名。请启用测试签名（"bcdedit /set testsigning on"）并重启，' +
+                    '然后再次运行 "rincast-audio-setup.exe install audio\RinCastAudio.inf"。')
             }
         }
         & (Join-Path $InstallDir 'rincast-audio-setup.exe') install $inf
         switch ($LASTEXITCODE) {
             0 { }
-            3010 { Warn 'Restart Windows to finish installing the audio driver.' }
-            default { Warn "Audio driver setup failed (exit code $LASTEXITCODE). Audio uses Steam's streaming devices instead, if Steam has installed them." }
+            3010 { Warn '请重启 Windows 以完成音频驱动安装。' }
+            default { Warn "音频驱动安装失败（退出代码 $LASTEXITCODE）。如果 Steam 已安装串流设备，RinCast 将改用这些设备。" }
         }
     } else {
-        Write-Host "   This package has no RinCast audio driver. Audio uses Steam's streaming devices (Steam Streaming Speakers and Steam Streaming Microphone)." -ForegroundColor DarkGray
+        Write-Host '   此程序包不含 RinCast 音频驱动。音频将使用 Steam 串流扬声器和麦克风。' -ForegroundColor DarkGray
     }
 }
 
 # 6. Shortcuts and uninstall entry --------------------------------------------
-Step 'Creating shortcuts'
+Step '正在创建快捷方式'
 $shell = New-Object -ComObject WScript.Shell
 $lnk = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'RinCast Streamer.lnk'))
 $lnk.TargetPath = $exe
@@ -213,7 +215,7 @@ foreach ($k in $props.Keys) {
     New-ItemProperty -Path $un -Name $k -Value $props[$k] -PropertyType $type -Force | Out-Null
 }
 
-Write-Host "`nRinCast $version is installed." -ForegroundColor Green
+Write-Host "`nRinCast $version 已安装。" -ForegroundColor Green
 # Through Explorer, so the streamer runs as the desktop user and not elevated.
 if (-not $NoStart) { Start-Process explorer.exe -ArgumentList "`"$exe`"" }
 Close-Window

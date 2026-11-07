@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "localization.h"
 
 #include <cmath>
 #include <algorithm>
@@ -79,7 +80,7 @@ bool Ui::Button(const char* id, const Rect& r, const std::string& label, const c
                 bool enabled, float textSize) {
     bool hovered, held;
     const bool clicked = Interact(Id(id), r, enabled, hovered, held);
-    if (hovered) m_hotLabel = label.empty() ? m_nextLabel : label;
+    if (hovered) m_hotLabel = l10n::Translate(label.empty() ? m_nextLabel : label);
     m_nextLabel.clear();
     const std::string key = std::string(id) + "#h";
     const float h = Anim(key.c_str(), hovered ? 1.f : 0.f, 30.f);
@@ -118,7 +119,7 @@ bool Ui::Button(const char* id, const Rect& r, const std::string& label, const c
 bool Ui::IconButton(const char* id, const Rect& r, const char* icon, bool active, const char* label, bool enabled) {
     bool hovered, held;
     const bool clicked = Interact(Id(id), r, enabled, hovered, held);
-    if (hovered) m_hotLabel = label ? label : !m_nextLabel.empty() ? m_nextLabel : icon;
+    if (hovered) m_hotLabel = l10n::Translate(label ? label : !m_nextLabel.empty() ? m_nextLabel : icon);
     m_nextLabel.clear();
     const std::string key = std::string(id) + "#h";
     const float h = Anim(key.c_str(), hovered ? 1.f : 0.f, 30.f);
@@ -141,8 +142,8 @@ bool Ui::Check(const char* id, const Rect& r, const std::string& label, bool& va
     bool hovered, held;
     const bool clicked = Interact(Id(id), r, enabled, hovered, held);
     if (clicked) value = !value;
-    if (hovered) m_hotLabel = (m_nextLabel.empty() ? label : m_nextLabel) + (value ? ", on" : ", off");
-    if (clicked) m_speech = value ? "On" : "Off";
+    if (hovered) m_hotLabel = l10n::Translate(m_nextLabel.empty() ? label : m_nextLabel) + (value ? "，开启" : "，关闭");
+    if (clicked) m_speech = value ? "开启" : "关闭";
     m_nextLabel.clear();
     const std::string key = std::string(id) + "#c";
     const float h = Anim(key.c_str(), hovered ? 1.f : 0.f, 30.f);
@@ -162,8 +163,8 @@ bool Ui::Check(const char* id, const Rect& r, const std::string& label, bool& va
 bool Ui::Radio(const char* id, const Rect& r, const std::string& label, bool selected, const std::string& note, bool enabled) {
     bool hovered, held;
     const bool clicked = Interact(Id(id), r, enabled, hovered, held);
-    if (hovered) m_hotLabel = (m_nextLabel.empty() ? "" : m_nextLabel + ": ") + label + (note.empty() ? "" : ", " + note) + (selected ? ", selected" : "");
-    if (clicked && !selected) m_speech = label + ", selected";
+    if (hovered) m_hotLabel = (m_nextLabel.empty() ? "" : l10n::Translate(m_nextLabel) + "：") + l10n::Translate(label) + (note.empty() ? "" : "，" + l10n::Translate(note)) + (selected ? "，已选中" : "");
+    if (clicked && !selected) m_speech = l10n::Translate(label) + "，已选中";
     m_nextLabel.clear();
     const std::string key = std::string(id) + "#o";
     const float h = Anim(key.c_str(), hovered ? 1.f : 0.f, 30.f);
@@ -184,7 +185,7 @@ bool Ui::Radio(const char* id, const Rect& r, const std::string& label, bool sel
 bool Ui::Bar(const char* id, const Rect& r, float& value, float min, float max, float step, const std::string& text, bool enabled, float mark) {
     bool hovered, held;
     Interact(Id(id), r, enabled, hovered, held);
-    if (hovered) m_hotLabel = (m_nextLabel.empty() ? "" : m_nextLabel + ", ") + text;
+    if (hovered) m_hotLabel = l10n::Translate(m_nextLabel.empty() ? "" : m_nextLabel) + "，" + l10n::Translate(text);
     m_nextLabel.clear();
     bool changed = false;
     if (held && m_p.pressed) {
@@ -221,7 +222,7 @@ bool Ui::Bar(const char* id, const Rect& r, float& value, float min, float max, 
 bool Ui::Row(const char* id, const Rect& r, bool selected, bool enabled) {
     bool hovered, held;
     const bool clicked = Interact(Id(id), r, enabled, hovered, held);
-    if (hovered) m_hotLabel = m_nextLabel + (selected ? ", selected" : "");
+    if (hovered) m_hotLabel = l10n::Translate(m_nextLabel) + (selected ? "，已选中" : "");
     m_nextLabel.clear();
     const std::string key = std::string(id) + "#r";
     const float h = Anim(key.c_str(), hovered ? 1.f : 0.f, 30.f);

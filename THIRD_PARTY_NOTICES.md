@@ -373,6 +373,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Noto Sans SC (Simplified Chinese SDF atlas)
+
+The headset's `assets/ui/text-zh.png` atlas was baked from Noto Sans SC,
+from https://github.com/notofonts/noto-cjk, under the SIL Open Font License
+1.1. The full license is in `third_party/fonts/NotoSansSC-OFL.txt` and
+`headset/app/src/main/assets/licenses/NotoSansSC-OFL.txt` (packaged in the APK).
+The reproducible source TTF is `third_party/fonts/NotoSansSC-VF.ttf`; it is not bundled in
+the APK. Regenerate the atlas with `tools/assetbaker/bake-zh.cpp` and
+`tools/assetbaker/zh-charset.txt`.
+
 ## Inter
 
 PC (web UI), Headset (baked into the text atlas). `third_party/fonts`. https://github.com/rsms/inter

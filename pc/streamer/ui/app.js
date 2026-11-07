@@ -5,6 +5,19 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// ---------------------------------------------------------------- translations
+// The dictionary lives in i18n.js, which loads before this module. The wrappers
+// below keep this file readable: t() takes a key, tf() looks a phrase up by its
+// English text, and both fall back to the English they were given.
+const i18n = window.RinCastI18n;
+const t = (key, vars, fallback) => i18n.t(key, vars, fallback);
+const tf = (english, vars) => i18n.tf(english, vars);
+// Re-fills the static markup and re-renders everything that is built in script.
+document.addEventListener("rincast:language", () => {
+  i18n.apply();
+  if (state) renderAll();
+});
+
 // ---------------------------------------------------------------- bridge
 const native = window.chrome?.webview;
 const pending = new Map();
@@ -21,7 +34,7 @@ function request(msg, timeoutMs = 30000) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
-      resolve({ ok: false, error: "RinCast didn't respond. Try again." });
+      resolve({ ok: false, error: t("error.noResponse", null, "RinCast didn't respond. Try again.") });
     }, timeoutMs);
     pending.set(requestId, (r) => { clearTimeout(timer); resolve(r); });
     send({ ...msg, requestId });
@@ -85,8 +98,8 @@ listeners.push((msg) => {
       break;
     case "session":
       request({ type: "getState" });
-      if (msg.connected) toast(`${msg.deviceName} connected`);
-      else if (msg.reason !== "replaced") toast(`${msg.deviceName} disconnected`);
+      if (msg.connected) toast(t("toast.connected", { device: msg.deviceName }, `${msg.deviceName} connected`));
+      else if (msg.reason !== "replaced") toast(t("toast.disconnected", { device: msg.deviceName }, `${msg.deviceName} disconnected`));
       break;
     case "approval":
       if (state) state.pendingApproval = msg;
@@ -168,14 +181,14 @@ function commitSetting(el) {
   let value = el.type === "checkbox" ? el.checked : el.value;
   if (el.type === "range" || (el.type === "radio" && /^\d+$/.test(value))) value = Number(value);
   if (key === "pcName" && !String(value).trim()) {
-    settingError(el, "The PC needs a name.");
+    settingError(el, t("error.pcName", null, "The PC needs a name."));
     el.value = state.settings.pcName;
     return;
   }
   settingError(el, "");
   request({ type: "setSettings", settings: { [key]: value } }).then((r) => {
     if (r.ok === false || !r.settings) {
-      settingError(el, r.error || "Couldn't save this. Try again.");
+      settingError(el, r.error || t("error.saveFailed", null, "Couldn't save this. Try again."));
       if (state) bindSettings();  // back to what actually applies
       return;
     }
@@ -189,7 +202,7 @@ function wireSetting(el) {
   if (el.type === "range") el.addEventListener("input", () => updateRangeLabel(el));
   el.addEventListener("change", async () => {
     if (el.dataset.setting === "requireApproval" && !el.checked &&
-        !(await confirmAction("Stop asking?", "Any headset that can reach this PC could then see your screen and control it, without you noticing. If you're signed in, that includes anyone with your account password.", "Stop asking"))) {
+        !(await confirmAction(t("devices.stopAskingTitle"), t("devices.stopAskingText"), t("devices.stopAskingAction")))) {
       el.checked = true;
       return;
     }
@@ -214,41 +227,43 @@ function streamTrouble(s) {
   if (!numberCells(s).some((n) => n[3])) return null;
   // A slow picture with a busy encoder is the PC's doing; the rest is the network's.
   const { encodeMs } = liveNumbers(s);
-  if (poorRuns.fps >= 5 && encodeMs >= 14) return { level: "warn", title: "This PC is at its limit", text: "Lower the VR graphics quality on the headset, or close other programs." };
-  if (s.vpn) return { level: "warn", title: "The VPN is limiting the stream", text: "A VPN that relays its traffic is slow. A direct path between the two devices helps." };
-  if (s.remote) return { level: "warn", title: "The connection is limiting the stream", text: "This is usual over the internet. A faster connection on either side helps." };
-  return { level: "warn", title: "The connection is limiting the stream", text: "A cable from the PC to the router and staying near the router help most." };
+  if (poorRuns.fps >= 5 && encodeMs >= 14) return { level: "warn", title: t("trouble.pcTitle"), text: t("trouble.pcText") };
+  if (s.vpn) return { level: "warn", title: t("trouble.vpnTitle"), text: t("trouble.vpnText") };
+  if (s.remote) return { level: "warn", title: t("trouble.remoteTitle"), text: t("trouble.remoteText") };
+  return { level: "warn", title: t("trouble.localTitle"), text: t("trouble.localText") };
 }
 
 function health() {
   const sys = state.system;
   const issues = [];
   if (!sys.encoder.backend || !(sys.encoder.hevc || sys.encoder.av1 || sys.encoder.h264)) {
-    issues.push({ level: "blocked", title: "This PC can't encode video", text: "RinCast needs the video encoder of an NVIDIA, AMD or Intel graphics card. Update your graphics driver, then restart RinCast." });
+    issues.push({ level: "blocked", title: t("issue.noEncoderTitle"), text: t("issue.noEncoderText") });
   }
   if (!sys.steamvr.installed) {
-    issues.push({ level: "info", title: "SteamVR isn't installed", text: "You need it for VR games, not for the desktop. Get it from Steam." });
+    issues.push({ level: "info", title: t("issue.noSteamVrTitle"), text: t("issue.noSteamVrText") });
   } else if (!sys.steamvr.driverRegistered) {
-    issues.push({ level: "warn", title: "RinCast isn't in SteamVR yet", text: "VR games won't reach your headset until it is.", action: "Add RinCast to SteamVR", run: registerDriver });
+    issues.push({ level: "warn", title: t("issue.driverMissingTitle"), text: t("issue.driverMissingText"), action: t("issue.driverMissingAction"), run: registerDriver });
   }
   const a = sys.audioDriver;
   if (state.settings.streamAudio && state.settings.micPassthrough && !a.active?.speaker && !a.active?.microphone && state.settings.audioDevices !== "system") {
-    issues.push({ level: "warn", title: "No virtual audio devices", text: "Your headset microphone won't reach apps. Turn on Remote Play in Steam to add them." });
+    issues.push({ level: "warn", title: t("issue.noAudioTitle"), text: t("issue.noAudioText") });
   }
   const c = state.cloud;
   if (c.signedIn && state.settings.allowRemote && c.status === "error") {
-    issues.push({ level: "warn", title: "Can't reach the RinCast server", text: `${c.error || "The connection failed."} Your own network still works.` });
+    const detail = c.error || t("issue.cloudFallback");
+    issues.push({ level: "warn", title: t("issue.cloudTitle"), text: t("issue.cloudText", { error: detail }) });
   }
   const fw = sys.firewall || {};
   if (fw.otherNetworksOpen === false) {
-    issues.push({ level: "warn", title: "Windows' firewall is blocking headsets", text: "RinCast has to be allowed through it. Windows asks for your permission.", action: "Allow RinCast", run: () => setFirewall(!!fw.publicAllowed) });
+    issues.push({ level: "warn", title: t("issue.firewallTitle"), text: t("issue.firewallText"), action: t("issue.firewallAction"), run: () => setFirewall(!!fw.publicAllowed) });
   }
   // Not a fault: Public stays closed until someone chooses otherwise.
   if (fw.usbAdapter && fw.usbOpen === false) {
-    issues.push({ level: "warn", title: "Windows' firewall is blocking the USB cable", text: `A headset is plugged in by cable ("${fw.usbAdapter}"). Windows treats that as an unknown network. Allowing it opens only that cable, no other network.`, action: "Allow the USB cable", run: allowUsbCable });
+    issues.push({ level: "warn", title: t("issue.usbTitle"), text: t("issue.usbText", { adapter: fw.usbAdapter }), action: t("issue.usbAction"), run: allowUsbCable });
   }
   if (fw.publicInUse && !fw.publicAllowed) {
-    issues.push({ level: "info", title: "Headsets can't connect over a network set as Public", text: `Windows has one of this PC's networks set as Public${(sys.vpnAddresses || []).length ? ", which can be a VPN" : ""}. Allow it only if you trust that network.`, action: "Allow on Public networks", run: () => choosePublicNetworks(true) });
+    const vpn = (sys.vpnAddresses || []).length ? t("issue.publicVpn") : "";
+    issues.push({ level: "info", title: t("issue.publicTitle"), text: t("issue.publicText", { vpn }), action: t("issue.publicAction"), run: () => choosePublicNetworks(true) });
   }
   const trouble = state.session && streamTrouble(state.session);
   if (trouble) issues.push(trouble);
@@ -278,7 +293,7 @@ function setFacts(list, rows) {
 
 function encoderText() {
   const enc = state.system.encoder;
-  if (!enc.backend) return "None found. Update your graphics driver.";
+  if (!enc.backend) return t("general.encoderNone", null, "None found. Update your graphics driver.");
   const backend = { nvenc: "NVIDIA", amf: "AMD", mf: "Windows Media Foundation" }[enc.backend] || enc.backend;
   return `${backend}: ${[enc.h264 && "H.264", enc.hevc && "HEVC", enc.av1 && "AV1"].filter(Boolean).join(", ")}`;
 }
@@ -292,30 +307,30 @@ function renderHome() {
   $("#numbers").hidden = true;
   $("#steps").hidden = true;
   if (approval) {
-    $("#headline").textContent = `${approval.deviceName} wants to connect`;
+    $("#headline").textContent = t("home.wantsToConnect", { device: approval.deviceName });
     $("#subline").dataset.state = "wait";
-    $("#subline").textContent = `From ${approval.address}. Only allow it if it's yours.`;
+    $("#subline").textContent = t("home.fromAddress", { address: approval.address });
     setActions("", () => []);
     setFacts($("#facts"), []);
   } else if (s) {
     const inVr = s.vrState === "running";
-    const app = s.vrApp || (s.vrProducer === "steamvr" ? "SteamVR" : "a VR game");
+    const app = s.vrApp || (s.vrProducer === "steamvr" ? "SteamVR" : tf("a VR game"));
     const streaming = inVr || (s.desktop || []).length > 0;
-    $("#headline").textContent = inVr ? `Playing ${app}` : streaming ? "Streaming your desktop" : `Connected to ${s.deviceName}`;
+    $("#headline").textContent = inVr ? t("home.playing", { app }) : streaming ? t("home.streamingDesktop") : t("home.connectedTo", { device: s.deviceName });
     $("#subline").dataset.state = s.vrState === "launching" ? "wait" : "plain";
-    $("#subline").textContent = s.vrState === "launching" ? "Starting SteamVR…" : `${s.deviceName}, ${duration(s.connectedSeconds)}`;
-    setActions(`session:${s.deviceName}`, () => [button("Disconnect", "", async () => {
+    $("#subline").textContent = s.vrState === "launching" ? t("home.startingSteamVr") : t("home.deviceDuration", { device: s.deviceName, duration: duration(s.connectedSeconds) });
+    setActions(`session:${s.deviceName}`, () => [button(t("home.disconnect"), "", async () => {
       const running = state.session?.vrState === "running";
-      if (await confirmAction(`Disconnect ${s.deviceName}?`, running ? "The game keeps running on this PC. The headset goes back to its home screen." : "The headset goes back to its home screen.", "Disconnect", false)) send({ type: "disconnect" });
+      if (await confirmAction(t("home.disconnectTitle", { device: s.deviceName }), running ? t("home.disconnectRunning") : t("home.disconnectIdle"), t("home.disconnect"), false)) send({ type: "disconnect" });
     })]);
     $("#live").hidden = false;
     renderLive(s);
   } else {
-    $("#headline").textContent = blocked ? "Can't stream yet" : `Choose ${state.settings.pcName} on your headset`;
+    $("#headline").textContent = blocked ? t("home.cantStream") : t("home.choosePc", { pc: state.settings.pcName });
     const firstRun = !blocked && !connectedBefore();
     // The steps below say it all the first time; after that, the next step is the headline.
-    if (firstRun) $("#headline").textContent = "Set up your Quest";
-    $("#subline").textContent = blocked ? "RinCast can't stream until the first problem below is fixed." : "";
+    if (firstRun) $("#headline").textContent = t("home.setUpQuest");
+    $("#subline").textContent = blocked ? t("home.fixProblem") : "";
     $("#stepPcName").textContent = state.settings.pcName;
     $("#subline").dataset.state = blocked ? "bad" : "";
     $("#steps").hidden = !firstRun;
@@ -324,10 +339,10 @@ function renderHome() {
     const devices = (state.settings.trustedDevices || []).slice().sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
     const last = devices[0];
     setFacts($("#facts"), [
-      [(state.system.addresses || []).length > 1 ? "Addresses" : "Address", (state.system.addresses || []).join(", ") || "No network"],
-      ...(state.system.vpnAddresses || []).map((v) => [v.name, `${v.address} (VPN: enter this on the headset)`]),
-      state.cloud.signedIn && state.settings.allowRemote && state.cloud.status === "online" && ["Other networks", "This PC can be reached from them"],
-      last && ["Last headset", `${last.name}${last.lastSeen ? `, ${new Date(last.lastSeen * 1000).toLocaleDateString()}` : ""}`],
+      [(state.system.addresses || []).length > 1 ? t("home.addresses") : t("home.address"), (state.system.addresses || []).join(", ") || t("home.noNetwork")],
+      ...(state.system.vpnAddresses || []).map((v) => [v.name, t("home.vpnHint", { address: v.address })]),
+      state.cloud.signedIn && state.settings.allowRemote && state.cloud.status === "online" && [t("home.otherNetworks"), t("home.otherNetworksHint")],
+      last && [t("home.lastHeadset"), `${last.name}${last.lastSeen ? `, ${new Date(last.lastSeen * 1000).toLocaleDateString()}` : ""}`],
     ]);
   }
   renderIssues(issues);
@@ -382,9 +397,9 @@ function numberCells(s) {
   const wanted = vr?.refreshRate;
   const halfRate = wanted && fps >= wanted * 0.45 && fps <= wanted * 0.55;
   return [
-    ["Latency", latency ? Math.round(latency) : "–", latency ? (latency >= 130 ? "ms (high)" : latency >= 80 ? "ms (noticeable)" : "ms") : "", poorRuns.latency >= 5],
-    ["Frame rate", fps ? Math.round(fps) : "–", fps ? (wanted && fps < wanted * 0.95 ? (halfRate ? "fps (half rate)" : `fps (below ${Math.round(wanted)})`) : "fps") : "", poorRuns.fps >= 5],
-    ["Bitrate", mbps ? mbps.toFixed(mbps < 10 ? 1 : 0) : "–", mbps ? (mbps < 10 ? "Mbps (low)" : "Mbps") : "", poorRuns.mbps >= 5],
+    [t("numbers.latency"), latency ? Math.round(latency) : "–", latency ? (latency >= 130 ? t("numbers.msHigh") : latency >= 80 ? t("numbers.msNoticeable") : t("numbers.ms")) : "", poorRuns.latency >= 5],
+    [t("numbers.frameRate"), fps ? Math.round(fps) : "–", fps ? (wanted && fps < wanted * 0.95 ? (halfRate ? t("numbers.fpsHalf") : t("numbers.fpsBelow", { target: Math.round(wanted) })) : t("numbers.fps")) : "", poorRuns.fps >= 5],
+    [t("numbers.bitrate"), mbps ? mbps.toFixed(mbps < 10 ? 1 : 0) : "–", mbps ? (mbps < 10 ? t("numbers.mbpsLow") : t("numbers.mbps")) : "", poorRuns.mbps >= 5],
   ];
 }
 
@@ -393,12 +408,13 @@ function renderLive(s) {
   const numbers = $("#numbers");
   numbers.hidden = false;
   numbers.innerHTML = numberCells(s).map(([label, value, unit, poor]) => `<div><span>${esc(label)}</span><b class="${poor ? "poor" : ""}">${esc(value)}<small>${esc(unit)}</small></b></div>`).join("");
+  const path = s.usb ? t("live.pathUsb") : s.vpn ? t("live.pathVpn") : s.remote ? t("live.pathRemote") : t("live.pathLocal");
   setFacts($("#facts"), [
-    vr && ["Video", `${vr.codec}, ${vr.eyeWidth} × ${vr.eyeHeight} per eye, ${Math.round(vr.refreshRate)} Hz`],
-    !vr && (s.desktop || []).length && ["Video", s.desktop.map((d) => d.name).join(", ")],
-    !vr && !(s.desktop || []).length && ["Video", "Nothing yet. Open a desktop or game in the headset."],
-    encodeMs && ["Encoding", encodeMs < 14 ? `${encodeMs.toFixed(1)} ms` : `${encodeMs.toFixed(1)} ms, the GPU is busy`, encodeMs < 14 ? "" : "no"],
-    ["Network", `${s.rttMs.toFixed(1)} ms round trip, ${s.usb ? "over a USB cable" : s.vpn ? "over a VPN" : s.remote ? "over the internet" : "on your network"}`],
+    vr && [t("live.video"), t("live.videoVr", { codec: vr.codec, width: vr.eyeWidth, height: vr.eyeHeight, hz: Math.round(vr.refreshRate) })],
+    !vr && (s.desktop || []).length && [t("live.video"), t("live.videoDesktop", { monitors: s.desktop.map((d) => d.name).join(", ") })],
+    !vr && !(s.desktop || []).length && [t("live.video"), t("live.videoNothing")],
+    encodeMs && [t("live.encoding"), encodeMs < 14 ? `${encodeMs.toFixed(1)} ms` : t("live.gpuBusy", { ms: encodeMs.toFixed(1) }), encodeMs < 14 ? "" : "no"],
+    [t("live.network"), t("live.networkDetail", { ms: s.rttMs.toFixed(1), path })],
   ].filter(Boolean));
   renderStages(s);
   history.push(mbps || 0);
@@ -408,15 +424,15 @@ function renderLive(s) {
 
 // The headset times each stage a frame goes through; together they make up the latency.
 const STAGES = [
-  ["uplink", "Head movement to the PC"],
-  ["game", "Game and SteamVR"],
-  ["encoderWait", "Waiting for the encoder"],
-  ["encode", "Encoding"],
-  ["capture", "Capture and encoding"],
-  ["downlink", "Video to the headset"],
-  ["decode", "Decoding in the headset"],
-  ["nextFrame", "Waiting for the headset's next frame"],
-  ["compositor", "Headset compositor and display"],
+  ["uplink", "stage.uplink"],
+  ["game", "stage.game"],
+  ["encoderWait", "stage.encoderWait"],
+  ["encode", "stage.encode"],
+  ["capture", "stage.capture"],
+  ["downlink", "stage.downlink"],
+  ["decode", "stage.decode"],
+  ["nextFrame", "stage.nextFrame"],
+  ["compositor", "stage.compositor"],
 ];
 
 function renderStages(s) {
@@ -428,7 +444,7 @@ function renderStages(s) {
   const biggest = Math.max(...rows.map(([key]) => got[key]));
   $("#stages").innerHTML = rows.map(([key, label]) => {
     const ms = Math.max(got[key], 0);
-    return `<div class="stage${got[key] === biggest ? " big" : ""}"><span>${esc(label)}</span><i style="width:${((ms / total) * 100).toFixed(1)}%"></i><b>${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms</b></div>`;
+    return `<div class="stage${got[key] === biggest ? " big" : ""}"><span>${esc(t(label))}</span><i style="width:${((ms / total) * 100).toFixed(1)}%"></i><b>${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms</b></div>`;
   }).join("");
 }
 
@@ -440,7 +456,7 @@ function renderStatus() {
   let html = "";
   if (s && !onHome) {
     const cell = (label, value, poor) => `<div><span>${esc(label)}</span><b class="${poor ? "poor" : ""}">${esc(value)}</b></div>`;
-    html = cell("Connected to", s.deviceName) + '<i class="gap"></i>' +
+    html = cell(t("status.connectedTo"), s.deviceName) + '<i class="gap"></i>' +
       numberCells(s).map(([label, value, unit, poor]) => cell(label, `${value} ${unit}`.trim(), poor)).join("");
   }
   if (el.dataset.html !== html) {
@@ -462,8 +478,8 @@ function drawSpark() {
   const limit = s?.vr ? s.headsetBitrateMbps || state.settings.vrBitrateMbps : state.settings.desktopBitrateMbps;
   const peak = Math.max(...history, 0);
   const w = c.clientWidth, max = Math.max(limit, peak);
-  $("#sparkRange").textContent = `Limit ${limit} Mbps`;
-  c.setAttribute("aria-label", `Bitrate over the last minute, peak ${Math.round(peak)} of ${limit} Mbps`);
+  $("#sparkRange").textContent = t("video.overrideBitrate", { mbps: limit });
+  c.setAttribute("aria-label", tf(`Bitrate over the last minute, peak ${Math.round(peak)} of ${limit} Mbps`));
   const forced = matchMedia("(forced-colors: active)").matches;
   // The limit, as the top of the chart.
   g.fillStyle = forced ? "CanvasText" : "#555";
@@ -480,9 +496,9 @@ function drawSpark() {
 }
 
 function duration(sec) {
-  if (sec < 60) return "just connected";
-  if (sec < 3600) return `connected for ${Math.floor(sec / 60)} min`;
-  return `connected for ${Math.floor(sec / 3600)} h ${Math.floor((sec % 3600) / 60)} min`;
+  if (sec < 60) return t("duration.justConnected");
+  if (sec < 3600) return t("duration.minutes", { n: Math.floor(sec / 60) });
+  return t("duration.hours", { h: Math.floor(sec / 3600), m: Math.floor((sec % 3600) / 60) });
 }
 
 function button(label, kind, onClick) {
@@ -499,8 +515,8 @@ const dialog = $("#approval");
 let approvalFor = null;
 function showApproval(a) {
   approvalFor = a;
-  $("#approvalTitle").textContent = `Allow ${a.deviceName}?`;
-  $("#approvalText").textContent = `${a.model || "A headset"} at ${a.address} wants to stream from this PC.`;
+  $("#approvalTitle").textContent = t("approval.title", { device: a.deviceName });
+  $("#approvalText").textContent = t("approval.text", { model: a.model || t("approval.headsetFallback"), address: a.address });
   if (dialog.open) return;  // state updates must not move focus
   dialog.returnValue = "";
   dialog.showModal();
@@ -549,9 +565,9 @@ function renderDependents() {
   $("#vrBitrateBar output").textContent = fromHeadset ? `${session.headsetBitrateMbps} Mbps` : `${state.settings.vrBitrateMbps} Mbps`;
   if (fromHeadset) $("#vrBitrateBar input").style.setProperty("--fill", `${((session.headsetBitrateMbps - 20) / 480) * 100}%`);
   const codec = session?.headsetCodec && session.headsetCodec !== "auto" ? session.headsetCodec : "";
-  const chosen = [fromHeadset && `bitrate limit ${session.headsetBitrateMbps} Mbps`, codec && { hevc: "HEVC", av1: "AV1", h264: "H.264" }[codec]].filter(Boolean);
-  $("#overrideNote").textContent = chosen.length ? `The connected headset overrides these: ${chosen.join(", ")}.` : "Bitrate and codec set on the headset override these";
-  if (unsupported.length) $("#overrideNote").textContent += ` This graphics card can't encode ${unsupported.join(" or ")}.`;
+  const chosen = [fromHeadset && t("video.overrideBitrate", { mbps: session.headsetBitrateMbps }), codec && { hevc: "HEVC", av1: "AV1", h264: "H.264" }[codec]].filter(Boolean);
+  $("#overrideNote").textContent = chosen.length ? t("video.overrideFromHeadset", { list: chosen.join(t("video.or")) }) : t("video.overrideHint");
+  if (unsupported.length) $("#overrideNote").textContent += " " + t("video.cantEncode", { list: unsupported.join(t("video.or")) });
   const h264 = state.settings.codec === "h264";
   setOff($("#tenBitRow"), h264);
   $("#tenBitHint").hidden = !h264;
@@ -568,7 +584,7 @@ function renderAudio() {
   const a = state.system.audioDriver;
   const steam = a.steam || {};
   const active = a.active || {};
-  const row = (ok, name, inUse) => [name, ok ? (inUse ? "Used while streaming" : "Installed") : "Not installed", ok ? "" : "no"];
+  const row = (ok, name, inUse) => [name, ok ? (inUse ? t("audio.usedWhileStreaming") : t("audio.installed")) : t("audio.notInstalled"), ok ? "" : "no"];
   const rows = [
     row(steam.speaker, AUDIO_SETS.steam.speaker, active.speaker === "steam"),
     row(steam.microphone, AUDIO_SETS.steam.mic, active.microphone === "steam"),
@@ -580,26 +596,26 @@ function renderAudio() {
   }
   // Only what's missing needs saying.
   const missing = rows.filter((r) => r[2] === "no").map((r) => r[0]);
-  $("#audioMissing").textContent = missing.length ? `${missing.join(" and ")} ${missing.length > 1 ? "aren't" : "isn't"} installed. Turn on Remote Play in Steam to add ${missing.length > 1 ? "them" : "it"}.` : "";
+  $("#audioMissing").textContent = missing.length ? t("audio.missing", { list: missing.join(t("video.or")), more: missing.length > 1 ? t("audio.missingMore") : t("audio.missingOne") }) : "";
   const mic = AUDIO_SETS[active.microphone]?.mic;
-  $("#micHint").textContent = mic ? `In apps, choose ${mic} as the input` : "No virtual microphone available. Turn on Remote Play in Steam to add one";
+  $("#micHint").textContent = mic ? t("audio.micHint", { mic }) : t("audio.micNone");
   const speaker = AUDIO_SETS[active.speaker]?.speaker;
-  $("#audioDevicesHint").textContent = speaker ? `Using ${speaker}${mic && active.microphone !== active.speaker ? ` and ${mic}` : ""}` : "PC sound comes from your default speakers";
+  $("#audioDevicesHint").textContent = speaker ? (mic && active.microphone !== active.speaker ? t("audio.usingBoth", { speaker, mic }) : t("audio.using", { speaker })) : t("audio.defaultSpeakers");
 }
 
 async function allowUsbCable() {
-  toast("Accept the Windows prompt");
+  toast(t("audio.acceptPrompt"));
   const r = await request({ type: "allowUsbCable" }, 90000);
-  if (r.ok) toast("Headsets can connect over the USB cable");
-  else showError("The firewall didn't change. Windows' permission prompt was declined or failed.");
+  if (r.ok) toast(t("audio.usbAllowed"));
+  else showError(t("audio.firewallFailed"));
   await request({ type: "getState" });
 }
 
 async function setFirewall(allowPublic) {
-  toast("Accept the Windows prompt");
+  toast(t("audio.acceptPrompt"));
   const r = await request({ type: "setFirewall", allowPublic }, 90000);
-  if (r.ok) toast(allowPublic ? "Headsets can connect on Public networks" : "Public networks are closed to headsets");
-  else showError("The firewall didn't change. Windows' permission prompt was declined or failed.");
+  if (r.ok) toast(allowPublic ? t("audio.publicAllowed") : t("audio.publicClosed"));
+  else showError(t("audio.firewallFailed"));
   await request({ type: "getState" });
 }
 
@@ -607,9 +623,9 @@ async function setFirewall(allowPublic) {
 async function choosePublicNetworks(on) {
   if (on) {
     const risk = state.settings.requireApproval
-      ? "A new headset still has to be allowed on this PC."
-      : "\"Ask before a new headset connects\" is off, so anyone on such a network could see your screen and control this PC. Turn it on under Headsets first.";
-    const yes = await confirmAction("Allow headsets on Public networks?", `On a network set as Public, such as in a café or hotel, anyone can then see this PC's name, graphics card and RinCast account name in RinCast, and ask to connect. ${risk} Windows asks for your permission next.`, "Allow on Public networks");
+      ? t("general.publicRiskApproval")
+      : t("general.publicRiskOpen");
+    const yes = await confirmAction(t("general.publicConfirmTitle"), t("general.publicConfirmText", { risk }), t("general.publicAction"));
     if (!yes) {
       renderFirewall();
       return;
@@ -624,14 +640,14 @@ function renderFirewall() {
   const box = $("#allowPublic");
   box.checked = !!fw.publicAllowed;
   setOff($("#publicRow"), !!fw.publicUnguarded);
-  $("#publicNote").textContent = fw.publicUnguarded ? "Windows' firewall is off on Public networks" : "Anyone on those networks can then see this PC and ask to connect";
+  $("#publicNote").textContent = fw.publicUnguarded ? t("general.publicUnguarded") : t("general.publicNote");
 }
 $("#allowPublic").addEventListener("change", (e) => choosePublicNetworks(e.target.checked));
 
 async function registerDriver() {
   const r = await request({ type: "registerSteamVrDriver" });
-  if (r.ok) toast("RinCast is in SteamVR");
-  else showError("Couldn't add RinCast to SteamVR. Start SteamVR once, then try again.");
+  if (r.ok) toast(t("vr.added"));
+  else showError(t("vr.addFailed"));
   request({ type: "getState" });
 }
 
@@ -639,10 +655,10 @@ function renderVr() {
   const sys = state.system;
   $$("#runtimeSeg input").forEach((b) => { b.checked = (b.value === "rincast" && sys.openxr.rincastActive) || (b.value === "steamvr" && sys.openxr.steamvrActive); });
   $("#runtimeRow").hidden = sys.openxr.rincastAvailable === false;
-  $("#runtimeNote").textContent = sys.openxr.rincastActive || sys.openxr.steamvrActive ? "" : "Another app handles OpenXR games right now.";
+  $("#runtimeNote").textContent = sys.openxr.rincastActive || sys.openxr.steamvrActive ? "" : t("vr.otherRuntime");
   setFacts($("#vrFacts"), [
-    ["Status", !sys.steamvr.installed ? "Not installed" : sys.steamvr.running ? "Running" : "Not running", sys.steamvr.installed ? "" : "no"],
-    sys.steamvr.installed && ["RinCast driver", sys.steamvr.driverRegistered ? "Added" : "Not added yet", sys.steamvr.driverRegistered ? "" : "no"],
+    [t("vr.status"), !sys.steamvr.installed ? t("vr.notInstalled") : sys.steamvr.running ? t("vr.running") : t("vr.notRunning"), sys.steamvr.installed ? "" : "no"],
+    sys.steamvr.installed && [t("vr.driver"), sys.steamvr.driverRegistered ? t("vr.driverAdded") : t("vr.driverNotAdded"), sys.steamvr.driverRegistered ? "" : "no"],
   ]);
   $("#registerDriver").hidden = !sys.steamvr.installed || sys.steamvr.driverRegistered;
   $("#launchSteamVR").hidden = !sys.steamvr.installed || sys.steamvr.running;
@@ -650,17 +666,17 @@ function renderVr() {
   $("#getSteamVR").hidden = sys.steamvr.installed;
 }
 $$("#runtimeSeg input").forEach((b) => b.addEventListener("change", async () => {
-  toast("Accept the Windows prompt to switch");
+  toast(t("vr.acceptPrompt"));
   const r = await request({ type: "setOpenXrRuntime", runtime: b.value });
-  if (r.ok) toast(`OpenXR games now run through ${b.nextElementSibling.textContent}`);
-  else showError("Nothing changed: Windows' permission prompt was declined or failed.");
+  if (r.ok) toast(t("vr.runtimeSwitched", { runtime: b.nextElementSibling.textContent }));
+  else showError(t("vr.nothingChanged"));
   request({ type: "getState" });
 }));
 $("#registerDriver").onclick = registerDriver;
 $("#getSteamVR").onclick = () => send({ type: "openUrl", url: "https://store.steampowered.com/app/250820/SteamVR/" });
-$("#launchSteamVR").onclick = () => { send({ type: "launchSteamVR" }); toast("Starting SteamVR"); };
+$("#launchSteamVR").onclick = () => { send({ type: "launchSteamVR" }); toast(t("vr.starting")); };
 $("#restartSteamVR").onclick = async () => {
-  if (await confirmAction("Restart SteamVR?", "Any running VR game closes.", "Restart")) { send({ type: "restartSteamVR" }); toast("Restarting SteamVR"); }
+  if (await confirmAction(t("vr.restartTitle"), t("vr.restartText"), t("vr.restartAction"))) { send({ type: "restartSteamVR" }); toast(t("vr.restarting")); }
 };
 $("#openLogs").onclick = () => send({ type: "openLogs" });
 
@@ -671,17 +687,17 @@ function renderDevices() {
   if (list.dataset.key === key) return;
   list.dataset.key = key;
   if (!devices.length) {
-    list.innerHTML = `<li class="empty">None yet. Choose Always allow when a headset connects.</li>`;
+    list.innerHTML = `<li class="empty">${esc(t("devices.empty"))}</li>`;
     return;
   }
   list.innerHTML = devices.map((d) => `
-    <li><div class="meta"><b>${esc(d.name)}</b><small>Last connected ${d.lastSeen ? new Date(d.lastSeen * 1000).toLocaleDateString() : "never"}</small></div>
-    <button class="btn" data-remove="${esc(d.id)}" data-name="${esc(d.name)}" aria-label="Remove ${esc(d.name)}">Remove</button></li>`).join("");
+    <li><div class="meta"><b>${esc(d.name)}</b><small>${esc(t("devices.lastConnected", { date: d.lastSeen ? new Date(d.lastSeen * 1000).toLocaleDateString() : t("home.never") }))}</small></div>
+    <button class="btn" data-remove="${esc(d.id)}" data-name="${esc(d.name)}" aria-label="${esc(t("devices.removeAria", { name: d.name }))}">${esc(t("devices.remove"))}</button></li>`).join("");
   $$("[data-remove]", list).forEach((b) => (b.onclick = async () => {
-    if (!(await confirmAction(`Remove ${b.dataset.name}?`, "It has to ask again the next time it connects.", "Remove"))) return;
+    if (!(await confirmAction(t("devices.removeTitle", { name: b.dataset.name }), t("devices.removeText"), t("devices.remove")))) return;
     const r = await request({ type: "removeTrusted", deviceId: b.dataset.remove });
-    if (r.ok === false) showError("Couldn't remove this headset. Try again.");
-    else toast("Headset removed");
+    if (r.ok === false) showError(t("devices.removeFailed"));
+    else toast(t("devices.removed"));
     request({ type: "getState" });
   }));
 }
@@ -701,8 +717,8 @@ function renderAccount() {
     const allow = $("#allowRemote");
     allow.checked = state.settings.allowRemote;
     $("#remoteStatus").textContent = !state.settings.allowRemote
-      ? "Off. Only your own network can reach this PC."
-      : { online: "Online", connecting: "Connecting to the RinCast server…", error: c.error || "Can't reach the RinCast server." }[c.status] || "";
+      ? t("account.remoteOff")
+      : { online: t("account.online"), connecting: t("account.connecting"), error: c.error || t("account.serverError") }[c.status] || "";
   }
 }
 function renderSignedIn(view, c) {
@@ -711,13 +727,13 @@ function renderSignedIn(view, c) {
       <div>
         <h2 class="first">${esc(c.userName)}</h2>
         <p class="note selectable">${esc(c.email)}</p>
-        <label class="check spaced"><input type="checkbox" data-setting="allowRemote" id="allowRemote"><span>Allow connections from other networks</span><small id="remoteStatus"></small></label>
-        <div class="btns spaced"><button class="btn" id="signOut">Sign out</button></div>
+        <label class="check spaced"><input type="checkbox" data-setting="allowRemote" id="allowRemote"><span>${esc(t("account.allowRemote"))}</span><small id="remoteStatus"></small></label>
+        <div class="btns spaced"><button class="btn" id="signOut">${esc(t("account.signOut"))}</button></div>
       </div>
       <div>
-        <h2 class="first">Sign in a headset</h2>
-        <h3 id="codeLabel">Enter the code your headset shows</h3>
-        <form class="code-entry" id="codeForm"><input type="text" id="code" maxlength="9" placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false" aria-labelledby="codeLabel"><button class="btn primary" id="codeSubmit">Approve</button></form>
+        <h2 class="first">${esc(t("account.signInHeadset"))}</h2>
+        <h3 id="codeLabel">${esc(t("account.codeLabel"))}</h3>
+        <form class="code-entry" id="codeForm"><input type="text" id="code" maxlength="9" placeholder="XXXX-XXXX" autocomplete="off" spellcheck="false" aria-labelledby="codeLabel"><button class="btn primary" id="codeSubmit">${esc(t("account.approve"))}</button></form>
         <p class="failed" id="codeError" role="alert"></p>
       </div>
     </div>`;
@@ -727,36 +743,36 @@ function renderSignedIn(view, c) {
     $("#codeError").textContent = "";
     const submit = $("#codeSubmit");
     submit.disabled = true;
-    submit.textContent = "Approving…";
+    submit.textContent = t("account.approving");
     const r = await request({ type: "approveCode", code: $("#code").value });
     submit.disabled = false;
-    submit.textContent = "Approve";
-    if (r.ok) { toast("Headset signed in"); $("#code").value = ""; }
-    else $("#codeError").textContent = r.error || "That code didn't work. Check it and try again.";
+    submit.textContent = t("account.approve");
+    if (r.ok) { toast(t("account.headsetSignedIn")); $("#code").value = ""; }
+    else $("#codeError").textContent = r.error || t("account.codeFailed");
   };
   $("#signOut").onclick = async () => {
-    if (!(await confirmAction("Sign out of this PC?", "Headsets can't reach it from other networks until you sign in again.", "Sign out"))) return;
+    if (!(await confirmAction(t("account.signOutTitle"), t("account.signOutText"), t("account.signOutAction")))) return;
     const r = await request({ type: "signOut" });
-    if (r.ok === false) showError(r.error || "Couldn't sign out. Try again.");
-    else toast("Signed out");
+    if (r.ok === false) showError(r.error || t("account.signOutFailed"));
+    else toast(t("account.signedOut"));
     request({ type: "getState" });
   };
 }
 function renderSignedOut(view) {
   const register = authMode === "register";
   view.innerHTML = `
-    <h2 class="first">${register ? "Create an account" : "Sign in"}</h2>
-    <p class="note auth-note">Only needed to reach this PC from other networks.</p>
+    <h2 class="first">${esc(register ? t("account.createAccount") : t("account.signIn"))}</h2>
+    <p class="note auth-note">${esc(t("account.onlyForRemote"))}</p>
     <form class="auth" id="authForm" novalidate>
-      ${register ? '<label for="authName">Name</label><input type="text" id="authName" name="name" autocomplete="nickname">' : ""}
-      <label for="authEmail">Email</label>
+      ${register ? `<label for="authName">${esc(t("account.name"))}</label><input type="text" id="authName" name="name" autocomplete="nickname">` : ""}
+      <label for="authEmail">${esc(t("account.email"))}</label>
       <input type="email" id="authEmail" name="email" autocomplete="email" required aria-describedby="authError">
-      <label for="authPassword">Password${register ? " (at least 8 characters)" : ""}</label>
+      <label for="authPassword">${esc(register ? t("account.passwordRule") : t("account.password"))}</label>
       <input type="password" id="authPassword" name="password" autocomplete="${register ? "new-password" : "current-password"}" required aria-describedby="authError">
       <p class="error" id="authError" role="alert"></p>
-      <button class="btn primary" id="authSubmit">${register ? "Create account" : "Sign in"}</button>
-      <p class="switch-mode">${register ? 'Already have an account? <button type="button" class="link" id="toggleAuth">Sign in</button>' : 'New to RinCast? <button type="button" class="link" id="toggleAuth">Create an account</button>'}</p>
-      ${register ? "" : '<p class="switch-mode">Forgot your password? Ask whoever runs your account server to reset it.</p>'}
+      <button class="btn primary" id="authSubmit">${esc(register ? t("account.create") : t("account.signIn"))}</button>
+      <p class="switch-mode">${register ? `${esc(t("account.haveAccount"))} <button type="button" class="link" id="toggleAuth">${esc(t("account.signIn"))}</button>` : `${esc(t("account.newHere"))} <button type="button" class="link" id="toggleAuth">${esc(t("account.createAccount"))}</button>`}</p>
+      ${register ? "" : `<p class="switch-mode">${esc(t("account.forgot"))}</p>`}
     </form>`;
   $("#toggleAuth").onclick = () => { authMode = register ? "signIn" : "register"; renderAccount(); ($("#authName") || $("#authEmail")).focus(); };
   $("#authForm").onsubmit = async (e) => {
@@ -764,27 +780,26 @@ function renderSignedOut(view) {
     const data = Object.fromEntries(new FormData(e.target));
     const err = $("#authError");
     err.textContent = "";
-    if (!/^\S+@\S+\.\S+$/.test(data.email || "")) { err.textContent = "Enter a valid email address."; $("#authEmail").focus(); return; }
-    if (register && (data.password || "").length < 8) { err.textContent = "Use at least 8 characters for the password."; $("#authPassword").focus(); return; }
+    if (!/^\S+@\S+\.\S+$/.test(data.email || "")) { err.textContent = t("account.invalidEmail"); $("#authEmail").focus(); return; }
+    if (register && (data.password || "").length < 8) { err.textContent = t("account.shortPassword"); $("#authPassword").focus(); return; }
     const btn = $("#authSubmit");
     const label = btn.textContent;
     btn.disabled = true;
-    btn.textContent = register ? "Creating…" : "Signing in…";
+    btn.textContent = register ? t("account.creating") : t("account.signingIn");
     const r = await request({ type: authMode, ...data });
     btn.disabled = false;
     btn.textContent = label;
-    if (!r.ok) { err.textContent = r.error || "That didn't work. Try again."; return; }
-    toast(register ? "Account created" : "Signed in");
+    if (!r.ok) { err.textContent = r.error || t("account.tryAgain"); return; }
+    toast(register ? t("account.created") : t("account.signedIn"));
     request({ type: "getState" });
   };
 }
 
-$("#downloadLink").onclick = () => send({ type: "openUrl", url: state.downloadUrl });
-
+// The upstream site distributes an English APK; avoid linking to the wrong build.
 function renderRail() {
-  $("#downloadLink").textContent = `Get it from ${state.downloadSite}`;
-  setFacts($("#aboutFacts"), [["Graphics card", state.system.gpu], state.system.encoder.backend && ["Video encoder", encoderText()], ["Version", state.version]]);
-  $("#aboutLine").textContent = `Free and open source, MIT licensed. UDP port ${state.system.port}`;
+  $("#downloadLink").textContent = t("general.useBundledApk");
+  setFacts($("#aboutFacts"), [[t("general.gpu"), state.system.gpu], state.system.encoder.backend && [t("general.encoder"), encoderText()], [t("general.version"), state.version]]);
+  $("#aboutLine").textContent = t("general.aboutLine", { port: state.system.port });
 }
 
 function renderAll() {
@@ -800,6 +815,9 @@ function renderAll() {
   renderRail();
   if (state.pendingApproval) showApproval(state.pendingApproval);
 }
+
+// The static markup carries data-i18n keys; fill them before the first render.
+i18n.apply();
 
 window.addEventListener("resize", () => history.length && drawSpark());
 request({ type: "getState" });

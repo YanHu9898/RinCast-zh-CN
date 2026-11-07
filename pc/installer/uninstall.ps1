@@ -1,4 +1,4 @@
-<#
+﻿<#
   Removes RinCast: streamer, SteamVR driver registration, OpenXR runtime
   registration, audio driver and test certificate, firewall rules and shortcuts.
 
@@ -93,7 +93,7 @@ $isDriveRoot = $installDir -eq [IO.Path]::GetPathRoot($installDir).TrimEnd('\')
 $isDefault = $installDir -ieq (Join-Path $env:ProgramFiles 'RinCast')
 if (-not $isDriveRoot -and ($isDefault -or (Test-Path (Join-Path $installDir '.rincast-install')))) {
     Start-Process cmd.exe -WindowStyle Hidden -ArgumentList "/c timeout /t 2 >nul & rmdir /s /q `"$installDir`""
-    Write-Host 'RinCast was removed.' -ForegroundColor Green
+    Write-Host 'RinCast 已移除。' -ForegroundColor Green
 } else {
-    Write-Host "RinCast was removed, but $installDir was kept because it has no installer marker. Delete it yourself if you don't need it." -ForegroundColor Yellow
+    Write-Host "RinCast 已移除，但因 $installDir 缺少安装标记，文件夹予以保留。如确认不再需要，可手动删除。" -ForegroundColor Yellow
 }

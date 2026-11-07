@@ -93,8 +93,8 @@ void InitWebView(HWND hwnd) {
             [hwnd](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(hr) || !env) {
                     MessageBoxW(hwnd,
-                                L"RinCast needs the Microsoft Edge WebView2 Runtime.\n"
-                                L"Install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703",
+                                L"RinCast 需要 Microsoft Edge WebView2 运行时。\n"
+                                L"请从 https://go.microsoft.com/fwlink/p/?LinkId=2124703 安装",
                                 L"RinCast Streamer", MB_ICONERROR);
                     return S_OK;
                 }
@@ -216,10 +216,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 case WM_CONTEXTMENU:
                 case WM_RBUTTONUP: {
                     HMENU menu = CreatePopupMenu();
-                    AppendMenuW(menu, MF_STRING, kCmdOpen, L"Open RinCast");
-                    if (App::Get().Server().ActiveSession()) AppendMenuW(menu, MF_STRING, kCmdDisconnect, L"Disconnect headset");
+                    AppendMenuW(menu, MF_STRING, kCmdOpen, L"打开 RinCast");
+                    if (App::Get().Server().ActiveSession()) AppendMenuW(menu, MF_STRING, kCmdDisconnect, L"断开头显连接");
                     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-                    AppendMenuW(menu, MF_STRING, kCmdQuit, L"Quit");
+                    AppendMenuW(menu, MF_STRING, kCmdQuit, L"退出");
                     POINT pt;
                     GetCursorPos(&pt);
                     SetForegroundWindow(hwnd);
@@ -246,7 +246,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (g_controller) g_controller->put_IsVisible(FALSE);
                 if (!g_trayHintShown) {
                     g_trayHintShown = true;
-                    TrayBalloon(L"RinCast is still running", L"Your headset can connect at any time. Quit from the tray icon.");
+                    TrayBalloon(L"RinCast 仍在运行", L"头显仍可随时连接。可从系统托盘图标退出。");
                 }
                 return 0;
             }
@@ -286,7 +286,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
     SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
 
     if (!App::Get().Init()) {
-        MessageBoxW(nullptr, L"RinCast Streamer could not start its network service. Is another copy running?",
+        MessageBoxW(nullptr, L"RinCast Streamer 无法启动网络服务。是否有另一个实例正在运行？",
                     L"RinCast Streamer", MB_ICONERROR);
         return 1;
     }

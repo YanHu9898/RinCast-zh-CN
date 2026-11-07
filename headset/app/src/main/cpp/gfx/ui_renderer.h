@@ -45,6 +45,8 @@ class Font {
     bool Load(Assets& assets);
     float Measure(const std::string& text, float size, Face face) const;
     float Ascent(float size, Face face) const;
+    float ChineseAscent(float size) const { return m_zhAscent * size / m_zhSize; }
+    float ChineseBakeSize() const { return m_zhSize; }
     const GlyphInfo* Glyph(uint32_t codepoint, Face face) const;
     const GlyphInfo* Icon(const std::string& name) const;
     float Kerning(uint32_t a, uint32_t b, Face face) const;
@@ -52,11 +54,19 @@ class Font {
     float IconBakeSize() const { return m_iconSize; }
     float Padding() const { return m_padding; }
     Texture& TextAtlas() { return m_text; }
+    Texture& ChineseAtlas() { return m_zhText; }
+    bool HasChineseGlyph(uint32_t cp) const { return m_zhGlyphs.find(cp) != m_zhGlyphs.end(); }
+    const GlyphInfo* ChineseGlyph(uint32_t cp) const {
+        auto it = m_zhGlyphs.find(cp);
+        return it == m_zhGlyphs.end() ? nullptr : &it->second;
+    }
     Texture& IconAtlas() { return m_icons; }
 
    private:
-    Texture m_text, m_icons;
+    Texture m_text, m_zhText, m_icons;
     float m_size = 56, m_iconSize = 64, m_padding = 8;
+    float m_zhAscent = 0, m_zhSize = 56;
+    std::map<uint32_t, GlyphInfo> m_zhGlyphs;
     float m_ascent[2] = {}, m_descent[2] = {};
     std::map<uint32_t, GlyphInfo> m_glyphs[2];
     std::map<uint32_t, float> m_kerning[2];

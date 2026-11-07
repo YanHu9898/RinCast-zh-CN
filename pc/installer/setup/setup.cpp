@@ -191,7 +191,7 @@ int RunScript(const fs::path& script, const std::wstring& args, const Progress& 
     if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
         CloseHandle(readPipe);
         CloseHandle(writePipe);
-        error = L"PowerShell didn't start.";
+        error = L"无法启动 PowerShell。";
         return -1;
     }
     CloseHandle(writePipe);
@@ -204,7 +204,7 @@ int RunScript(const fs::path& script, const std::wstring& args, const Progress& 
         log += w + L"\r\n";
         if (l.rfind("-> ", 0) == 0) p.step(w.substr(3));
         else if (l.rfind("!  ", 0) == 0) p.warning(w.substr(3));
-        else if (l.find("RinCast was not installed: ") != std::string::npos) error = w.substr(w.find(L": ") + 2);
+        else if (l.find("RinCast 安装失败：") != std::string::npos) error = w.substr(w.find(L"：") + 1);
     };
     while (ReadFile(readPipe, chunk, sizeof(chunk), &got, nullptr) && got > 0) {
         pending.append(chunk, got);
@@ -232,24 +232,24 @@ int Install(const Options& o, const Progress& p, std::wstring& error, std::wstri
     const fs::path work = fs::path(temp) / (L"RinCast-Setup-" + std::to_wstring(GetCurrentProcessId()));
     std::error_code ec;
     fs::remove_all(work, ec);
-    p.step(L"Unpacking");
+    p.step(L"正在解压");
     if (!Extract(work)) {
-        error = L"This setup file is damaged. Download it again.";
+        error = L"安装文件已损坏，请重新下载。";
         return 1;
     }
     std::wstring args = L"-InstallDir \"" + o.dir + L"\" -NoStart";
     if (o.allowPublic) args += L" -AllowPublic";
     const int code = RunScript(work / L"install.ps1", args, p, error, log);
     fs::remove_all(work, ec);
-    if (code != 0 && error.empty()) error = L"The installation stopped (" + std::to_wstring(code) + L").";
+    if (code != 0 && error.empty()) error = L"安装已中止（" + std::to_wstring(code) + L").";
     return code;
 }
 
 int Uninstall(const Options& o, const Progress& p, std::wstring& error, std::wstring& log) {
-    p.step(L"Removing RinCast");
+    p.step(L"正在移除 RinCast");
     const fs::path script = fs::path(o.dir) / L"uninstall.ps1";
     if (!fs::exists(script)) {
-        error = L"RinCast's uninstaller is missing from " + o.dir + L".";
+        error = L"以下位置缺少 RinCast 卸载程序：" + o.dir + L".";
         return 1;
     }
     return RunScript(script, o.keepSettings ? L"-KeepSettings" : L"", p, error, log);
@@ -360,7 +360,7 @@ void PickFolder() {
     DWORD opts = 0;
     d->GetOptions(&opts);
     d->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-    d->SetTitle(L"Install RinCast in");
+    d->SetTitle(L"将 RinCast 安装到");
     IShellItem* item = nullptr;
     if (SUCCEEDED(d->Show(g.hwnd)) && SUCCEEDED(d->GetResult(&item))) {
         PWSTR path = nullptr;
@@ -394,44 +394,44 @@ void Paint(HDC dc, const RECT& client) {
     switch (g.page) {
         case Page::Choose:
             if (install) {
-                heading(g.updating ? (g.installedVersion == g.newVersion ? L"Reinstall RinCast" : L"Update RinCast") : L"Install RinCast");
-                para(g.updating ? L"RinCast " + g.installedVersion + L" is installed. This puts " + g.newVersion +
-                                      L" in its place and keeps your settings and paired headsets."
-                                : L"RinCast Streamer and its SteamVR driver. Then open RinCast on your Quest to play this PC's games "
-                                  L"and use its desktop.");
+                heading(g.updating ? (g.installedVersion == g.newVersion ? L"重新安装 RinCast" : L"更新 RinCast") : L"安装 RinCast");
+                para(g.updating ? L"RinCast " + g.installedVersion + L" 已安装。本次将其更新为 " + g.newVersion +
+                                      L"，同时保留你的设置和已配对头显。"
+                                : L"安装 RinCast Streamer 和 SteamVR 驱动。然后在 Quest 上打开 RinCast，游玩电脑上的游戏"
+                                  L"并使用电脑桌面。");
                 y += g.S(4);
-                Text(dc, L"Folder", pad, y, w, g.note, kMuted);
+                Text(dc, L"文件夹", pad, y, w, g.note, kMuted);
                 y += g.S(20);
                 const int changeW = g.S(110);
                 Text(dc, g.options.dir, pad, y + g.S(9), w - changeW - g.S(16), g.body, g.updating ? kMuted : kText, DT_PATH_ELLIPSIS | DT_SINGLELINE);
-                if (!g.updating) AddButton(L"Change", 0, RECT{pad + w - changeW, y, pad + w, y + g.S(38)}, PickFolder);
+                if (!g.updating) AddButton(L"更改", 0, RECT{pad + w - changeW, y, pad + w, y + g.S(38)}, PickFolder);
                 y += g.S(56);
                 g.items.push_back({Item::Check, RECT{pad - g.S(8), y, pad + w, y + g.S(58)},
-                                   L"Allow headsets on Public networks\nOnly where you trust the network. You can change it in RinCast Streamer.",
+                                   L"允许头显在公用网络上连接\n仅在信任该网络时开启；之后可在 RinCast Streamer 中更改。",
                                    0, &g.options.allowPublic, nullptr});
                 y += g.S(66);
-                g.items.push_back({Item::Check, RECT{pad - g.S(8), y, pad + w, y + g.S(38)}, L"Open RinCast Streamer when it's done", 0,
+                g.items.push_back({Item::Check, RECT{pad - g.S(8), y, pad + w, y + g.S(38)}, L"完成后打开 RinCast Streamer", 0,
                                    &g.openWhenDone, nullptr});
                 y += g.S(50);
                 if (ProcessRunning(L"vrserver.exe") || ProcessRunning(L"RinCast Streamer.exe"))
-                    para(L"RinCast Streamer and SteamVR close while this runs.", kWarn);
-                AddButton(L"Cancel", 0, left, Close);
-                AddButton(g.updating ? L"Update" : L"Install", 1, right, StartWork);
+                    para(L"安装过程中会关闭 RinCast Streamer 和 SteamVR。", kWarn);
+                AddButton(L"取消", 0, left, Close);
+                AddButton(g.updating ? L"更新" : L"安装", 1, right, StartWork);
             } else {
-                heading(L"Remove RinCast");
-                para(L"This removes RinCast Streamer, its SteamVR driver, its firewall rules and its shortcuts. RinCast on "
-                     L"your Quest stays.");
+                heading(L"移除 RinCast");
+                para(L"这会移除 RinCast Streamer、SteamVR 驱动、防火墙规则和快捷方式。Quest 上的 RinCast"
+                     L"不会卸载。");
                 y += g.S(6);
                 g.items.push_back({Item::Check, RECT{pad - g.S(8), y, pad + w, y + g.S(58)},
-                                   L"Keep my settings\nPaired headsets and settings stay, for installing again later.", 0,
+                                   L"保留我的设置\n已配对头显和设置会保留，方便日后重新安装。", 0,
                                    &g.options.keepSettings, nullptr});
-                AddButton(L"Cancel", 0, left, Close);
-                AddButton(L"Remove", 2, right, StartWork);
+                AddButton(L"取消", 0, left, Close);
+                AddButton(L"移除", 2, right, StartWork);
             }
             break;
         case Page::Working: {
-            heading(install ? (g.updating ? L"Updating RinCast" : L"Installing RinCast") : L"Removing RinCast");
-            para(g.step.empty() ? L"Starting" : g.step);
+            heading(install ? (g.updating ? L"正在更新 RinCast" : L"正在安装 RinCast") : L"正在移除 RinCast");
+            para(g.step.empty() ? L"正在启动" : g.step);
             // Five steps or so; the bar fills as they pass.
             const RECT track{pad, y + g.S(6), pad + w, y + g.S(12)};
             Fill(dc, track, kControl, g.S(3));
@@ -442,41 +442,39 @@ void Paint(HDC dc, const RECT& client) {
         }
         case Page::Done:
             if (install) {
-                heading(g.updating ? L"RinCast is updated" : L"RinCast is installed");
-                para(L"Open RinCast on your Quest and choose this PC. The first time, allow the headset here on the PC.");
-                g.items.push_back({Item::Link, RECT{pad, y, pad + w, y + g.S(24)}, L"Get RinCast for the Quest", 0, nullptr,
-                                   [] { OpenAsUser(kDownloadUrl); }});
-                y += g.S(40);
+                heading(g.updating ? L"RinCast 已更新" : L"RinCast 已安装");
+                para(L"在 Quest 上打开 RinCast 并选择这台电脑。首次连接时，请在电脑上允许头显。");
+                para(L"简体中文版 Quest APK 与此安装程序一同提供，请参阅发行包说明。");
             } else {
-                heading(L"RinCast was removed");
-                para(g.options.keepSettings ? L"Your settings stay, for installing again later." : L"Its settings were removed too.");
+                heading(L"RinCast 已移除");
+                para(g.options.keepSettings ? L"设置已保留，方便日后重新安装。" : L"相关设置也已移除。");
             }
             for (const auto& wtext : g.warnings) para(wtext, kWarn);
             if (install && !g.openWhenDone) {
                 // Wider: the label is long.
                 const RECT open{client.right - pad - g.S(210), by, client.right - pad, by + bh};
                 const RECT close{open.left - g.S(12) - bw, by, open.left - g.S(12), by + bh};
-                AddButton(L"Close", 0, close, Close);
-                AddButton(L"Open RinCast Streamer", 1, open, [] {
+                AddButton(L"关闭", 0, close, Close);
+                AddButton(L"打开 RinCast Streamer", 1, open, [] {
                     OpenAsUser((fs::path(g.options.dir) / L"RinCast Streamer.exe").wstring());
                     Close();
                 });
             } else {
-                AddButton(L"Close", 1, right, Close);
+                AddButton(L"关闭", 1, right, Close);
             }
             break;
         case Page::Failed:
-            heading(install ? L"RinCast wasn't installed" : L"RinCast wasn't removed");
-            para(g.error.empty() ? L"Something went wrong." : g.error, kText);
+            heading(install ? L"RinCast 未能安装" : L"RinCast 未能移除");
+            para(g.error.empty() ? L"发生错误。" : g.error, kText);
             if (!g.log.empty())
-                g.items.push_back({Item::Link, RECT{pad, y, pad + w, y + g.S(24)}, L"Show the details", 0, nullptr, [] {
+                g.items.push_back({Item::Link, RECT{pad, y, pad + w, y + g.S(24)}, L"查看详情", 0, nullptr, [] {
                                        wchar_t temp[MAX_PATH];
                                        GetTempPathW(MAX_PATH, temp);
                                        const fs::path p = fs::path(temp) / L"RinCast-Setup.log";
                                        std::ofstream(p, std::ios::binary) << Narrow(g.log);
                                        ShellExecuteW(nullptr, L"open", L"notepad.exe", p.c_str(), nullptr, SW_SHOWNORMAL);
                                    }});
-            AddButton(L"Close", 1, right, Close);
+            AddButton(L"关闭", 1, right, Close);
             break;
     }
 
@@ -678,7 +676,7 @@ int RunWindow(HINSTANCE inst) {
     wc.lpszClassName = L"RinCastSetup";
     RegisterClassExW(&wc);
     const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    g.hwnd = CreateWindowExW(0, wc.lpszClassName, g.mode == Mode::Install ? L"RinCast Setup" : L"Uninstall RinCast", style,
+    g.hwnd = CreateWindowExW(0, wc.lpszClassName, g.mode == Mode::Install ? L"RinCast 安装程序" : L"卸载 RinCast", style,
                              CW_USEDEFAULT, CW_USEDEFAULT, 100, 100, nullptr, nullptr, inst, nullptr);
     g.dpi = GetDpiForWindow(g.hwnd);
     MakeFonts();
@@ -715,7 +713,7 @@ bool Render(const std::wstring& page, const fs::path& out) {
     g.page = page == L"working" ? Page::Working : page == L"done" || page == L"removed" ? Page::Done
              : page == L"failed"                ? Page::Failed
                                                 : Page::Choose;
-    g.step = L"Adding firewall rules";
+    g.step = L"正在添加防火墙规则";
     g.steps = 3;
     g.error = L"C:\\Program Files\\RinCast already contains other files. Choose an empty folder.";
     g.log = L"log";
@@ -782,7 +780,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                                                                                                             : Mode::Install;
     if (g.mode == Mode::Install && !HasPayload()) {
         MessageBoxW(nullptr, L"This is RinCast's setup program without RinCast in it. Download RinCast-Setup.exe again.",
-                    L"RinCast Setup", MB_ICONERROR);
+                    L"RinCast 安装程序", MB_ICONERROR);
         return 1;
     }
     if (!IsElevated()) {

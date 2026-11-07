@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "../platform/assets.h"
+#include "../ui/localization.h"
 #include "nlohmann/json.hpp"
 #include "rc/platform.h"
 
@@ -29,6 +30,7 @@ uint32_t NextCodepoint(const std::string& s, size_t& i) {
 bool Font::Load(Assets& assets) {
     std::vector<uint8_t> png;
     if (!assets.Read("ui/text.png", png) || !LoadImageTexture(png, 1, false, true, m_text)) return false;
+    if (!assets.Read("ui/text-zh.png", png) || !LoadImageTexture(png, 1, false, true, m_zhText)) return false;
     if (!assets.Read("ui/icons.png", png) || !LoadImageTexture(png, 1, false, true, m_icons)) return false;
     try {
         const auto text = nlohmann::json::parse(assets.ReadText("ui/text.json"));
@@ -45,6 +47,11 @@ bool Font::Load(Assets& assets) {
             const int face = key >= 0x110000 ? 1 : 0;
             m_glyphs[face][key % 0x110000] = {v[0], v[1], v[2], v[3], v[4], v[5], v[6]};
         }
+        const auto zh = nlohmann::json::parse(assets.ReadText("ui/text-zh.json"));
+        m_zhSize = zh.value("size", 56.f);
+        m_zhAscent = zh["faces"][0].value("ascent", m_zhSize * 0.8f);
+        for (auto& [k, v] : zh["glyphs"].items())
+            m_zhGlyphs[uint32_t(std::stoul(k))] = {v[0], v[1], v[2], v[3], v[4], v[5], v[6]};
         const auto icons = nlohmann::json::parse(assets.ReadText("ui/icons.json"));
         m_iconSize = icons.value("size", 64.f);
         for (auto& [k, v] : icons["icons"].items()) m_iconMap[k] = {v[0], v[1], v[2], v[3], v[4], v[5], v[6]};
@@ -76,13 +83,18 @@ float Font::Kerning(uint32_t a, uint32_t b, Face face) const {
 
 float Font::Ascent(float size, Face face) const { return m_ascent[int(face)] * size / m_size; }
 
-float Font::Measure(const std::string& text, float size, Face face) const {
+float Font::Measure(const std::string& original, float size, Face face) const {
+    const std::string text = l10n::Translate(original);
     const float scale = size / m_size;
     float w = 0;
     uint32_t prev = 0;
     for (size_t i = 0; i < text.size();) {
         const uint32_t cp = NextCodepoint(text, i);
-        if (const GlyphInfo* g = Glyph(cp, face)) w += (g->advance + (prev ? Kerning(prev, cp, face) : 0)) * scale;
+        if (cp >= 0x80 && HasChineseGlyph(cp)) {
+            if (const GlyphInfo* g = ChineseGlyph(cp)) w += g->advance * size / m_zhSize;
+        } else if (const GlyphInfo* g = Glyph(cp, face)) {
+            w += (g->advance + (prev ? Kerning(prev, cp, face) : 0)) * scale;
+        }
         prev = cp;
     }
     return w;
@@ -295,32 +307,38 @@ void UiRenderer::Arc(float cx, float cy, float radius, float thickness, float st
     Quad({cx - radius, cy - radius, radius * 2, radius * 2}, 0, 0, 0, 0, 5, c, c, radius, 0, thickness, start, sweep);
 }
 
-void UiRenderer::Text(const std::string& text, float x, float y, float size, const Color& c, Face face, Align align) {
-    SetTexture(m_font.TextAtlas().id);
+void UiRenderer::Text(const std::string& raw, float x, float y, float size, const Color& c, Face face, Align align) {
+    const std::string text = l10n::Translate(raw);
     const float scale = size / m_font.BakeSize();
     if (align != Align::Left) {
         const float w = m_font.Measure(text, size, face);
         x -= align == Align::Center ? w / 2 : w;
     }
     const float baseline = y + m_font.Ascent(size, face);
-    const float aw = float(m_font.TextAtlas().width), ah = float(m_font.TextAtlas().height);
     float pen = x;
     uint32_t prev = 0;
     for (size_t i = 0; i < text.size();) {
         const uint32_t cp = NextCodepoint(text, i);
-        const GlyphInfo* g = m_font.Glyph(cp, face);
+        const bool cjk = cp >= 0x80 && m_font.HasChineseGlyph(cp);
+        const GlyphInfo* g = cjk ? m_font.ChineseGlyph(cp) : m_font.Glyph(cp, face);
         if (!g) continue;
-        if (prev) pen += m_font.Kerning(prev, cp, face) * scale;
+        const Texture& atlas = cjk ? m_font.ChineseAtlas() : m_font.TextAtlas();
+        const float s = cjk ? size / m_font.ChineseBakeSize() : scale;
+        const float glyphBase = cjk ? y + m_font.ChineseAscent(size) : baseline;
+        SetTexture(atlas.id);
+        if (prev && !cjk) pen += m_font.Kerning(prev, cp, face) * scale;
         if (g->w > 0) {
-            const Rect gr{pen + g->xoff * scale, baseline + g->yoff * scale, g->w * scale, g->h * scale};
+            const Rect gr{pen + g->xoff * s, glyphBase + g->yoff * s, g->w * s, g->h * s};
+            const float aw = float(atlas.width), ah = float(atlas.height);
             Quad(gr, g->x / aw, g->y / ah, (g->x + g->w) / aw, (g->y + g->h) / ah, 1, c, c, 0, 0, 0);
         }
-        pen += g->advance * scale;
+        pen += g->advance * s;
         prev = cp;
     }
 }
 
-std::string UiRenderer::Ellipsize(const std::string& text, float maxWidth, float size, Face face) const {
+std::string UiRenderer::Ellipsize(const std::string& raw, float maxWidth, float size, Face face) const {
+    const std::string text = l10n::Translate(raw);
     if (m_font.Measure(text, size, face) <= maxWidth) return text;
     std::string s = text;
     while (!s.empty()) {
@@ -340,40 +358,40 @@ void UiRenderer::TextIn(const std::string& text, const Rect& r, float size, cons
     Text(s, x, y, size, c, face, align);
 }
 
-float UiRenderer::WrapText(const std::string& text, const Rect& r, float size, const Color& c, Face face,
-                           float lineHeight, Align align) {
+float UiRenderer::WrapText(const std::string& original, const Rect& r, float size, const Color& c, Face face,
+                            float lineHeight, Align align) {
+    const std::string text = l10n::Translate(original);
     float y = r.y;
     std::string line;
-    size_t i = 0;
     auto flush = [&] {
         const float x = align == Align::Left ? r.x : align == Align::Center ? r.x + r.w / 2 : r.Right();
         Text(line, x, y, size, c, face, align);
         y += lineHeight;
         line.clear();
     };
-    while (i < text.size()) {
-        if (text[i] == '\n') {
-            flush();
-            i++;
+    for (size_t i = 0; i < text.size();) {
+        if (text[i] == '\n') { flush(); ++i; continue; }
+        if (text[i] == ' ') {
+            if (!line.empty() && line.back() != ' ') line += ' ';
+            ++i;
             continue;
         }
-        size_t j = text.find_first_of(" \n", i);
-        if (j == std::string::npos) j = text.size();
-        const std::string word = text.substr(i, j - i);
-        const std::string candidate = line.empty() ? word : line + " " + word;
-        if (!line.empty() && m_font.Measure(candidate, size, face) > r.w) {
-            flush();
-            line = word;
-        } else {
-            line = candidate;
+        size_t j = i;
+        const uint32_t cp = NextCodepoint(text, j);
+        if (cp < 0x80) {
+            while (j < text.size() && text[j] != ' ' && text[j] != '\n' && static_cast<unsigned char>(text[j]) < 0x80) ++j;
         }
+        const std::string piece = text.substr(i, j - i);
+        if (!line.empty() && m_font.Measure(line + piece, size, face) > r.w) {
+            while (!line.empty() && line.back() == ' ') line.pop_back();
+            flush();
+        }
+        line += piece;
         i = j;
-        if (i < text.size() && text[i] == ' ') i++;
     }
     if (!line.empty()) flush();
     return y - r.y;
 }
-
 void UiRenderer::Icon(const std::string& name, float cx, float cy, float size, const Color& c) {
     const GlyphInfo* g = m_font.Icon(name);
     if (!g) return;
