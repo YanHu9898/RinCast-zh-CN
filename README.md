@@ -196,6 +196,11 @@ The music the headset app plays before a PC is connected is by Scott Buckley
 (www.scottbuckley.com.au): 'Electric Dreams', 'Twilight Echo', 'Machina' and
 'Tears In Rain', released under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
+## Contributors / 贡献者
+
+- **YanHu9898** — maintainer and release integrator for the zh-CN branch.
+- **Codex (OpenAI)** — AI coding assistant that helped implement the PC/headset localization, CJK font-atlas support and packaging under maintainer direction.
+
 ## Disclaimer
 
 RinCast is an independent project. It isn't affiliated with, endorsed by or
